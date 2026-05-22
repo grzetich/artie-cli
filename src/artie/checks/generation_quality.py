@@ -1,21 +1,27 @@
-"""Generation Quality check.
+"""Sample Generation check.
 
-The empirical heart of artie: ask an AI model to write code from these docs,
-then evaluate what it produced. This is the same methodology as Tokens Not
-Jokin', applied per-spec instead of across a research corpus.
+The empirical companion to artie's static checks: ask an AI model to write
+code from these docs, then show what it produced. This is the same
+methodology as Tokens Not Jokin', applied per-spec instead of across a
+research corpus.
 
-Five sub-criteria, each worth 2 points:
+This check is deliberately *not scored*. The generated code is the
+deliverable — read it and judge whether it looks like working code against
+your API. The five structural observations below are reported as commentary,
+not summed into a 0-10 grade:
 
-1. Parses as valid Python. If the model couldn't produce parseable code from
-   these docs, that is itself a low score.
-2. Imports an HTTP client library (requests, httpx, urllib.request, or aiohttp).
-3. Includes error handling (try/except, raise_for_status, status code checks).
-4. Constructs an HTTP request (any verb method on the client).
-5. Handles the response (status check, body parsing, or return of parsed result).
+1. Parses as valid Python.
+2. Imports an HTTP client library (requests, httpx, urllib.request, aiohttp).
+3. Includes error handling (try/except, raise_for_status, status checks).
+4. Constructs an HTTP request.
+5. Handles the response (status check, body parsing, return of parsed result).
 
-The generated code is included in the check's findings so users can see what
-the model actually wrote from their docs. That's the value an empirical check
-delivers that no rule-based check ever could.
+Why no score: a single generation against a single model is a sample, not a
+measurement. The model's training-data familiarity with the API confounds it
+(see the differential-mode contamination warning). The static checks tell you
+what to fix; this check shows you a concrete example of what an agent writes.
+
+The check is opt-in: pass --with-generation (or --differential) to run it.
 """
 
 import ast
@@ -24,7 +30,7 @@ from typing import Any
 
 from rich.console import Console
 
-from artie.checks.base import BaseCheck, CheckResult
+from artie.checks.base import BaseCheck, CheckResult, Severity
 from artie.generator import (
     DEFAULT_MODEL,
     GenerationError,
@@ -38,6 +44,13 @@ from artie.generator import (
 # Cap on the docs payload sent to the model. Most docs pages fit easily;
 # very large specs get truncated with a marker so the model knows.
 MAX_DOCS_CHARS = 60_000
+
+# In differential mode, a baseline (no-docs) run whose structural strength
+# reaches this internal threshold means the model already knows the API well
+# enough that the docs-informed run says little about the docs. Expressed on
+# the legacy 0-10 structural scale (5 criteria x 2, minus gap markers); kept
+# internal purely to drive the contamination warning.
+CONTAMINATION_THRESHOLD = 7
 
 PROMPT_TEMPLATE = """\
 You are evaluating API documentation by attempting to use it.
@@ -74,10 +87,9 @@ API documentation:
 """
 
 # Baseline prompt for differential mode: same task, but the model gets only
-# the API identifier and no documentation content. The score from this run
-# is what the model could produce from training alone. The delta between
-# the informed run and this run measures what the documentation actually
-# contributed.
+# the API identifier and no documentation content. What the model produces
+# here is what it could write from training alone — useful for spotting when
+# the docs-informed run is contaminated by training-data familiarity.
 BASELINE_PROMPT_TEMPLATE = """\
 You are writing client code for an API. Below is the API's identifier. \
 Write a single Python function that calls the most representative endpoint \
@@ -121,18 +133,28 @@ GAP_MARKER_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Human-readable labels for the five structural observations.
+CRITERIA_LABELS = {
+    "parses_as_python": "Parses as valid Python",
+    "imports_http_client": "Imports an HTTP client (requests, httpx, urllib, aiohttp)",
+    "handles_errors": "Includes error handling (try/except or status checks)",
+    "constructs_request": "Constructs an HTTP request",
+    "handles_response": "Handles the response body or status",
+}
 
-class GenerationQualityCheck(BaseCheck):
-    name = "Generation Quality"
+
+class SampleGenerationCheck(BaseCheck):
+    name = "Sample Generation"
     description = (
         "An AI model is given these docs and asked to write a Python function "
-        "that calls the API. The check scores what it produced."
+        "that calls the API. The generated code is the deliverable; this check "
+        "presents it and comments on its structure but assigns no score."
     )
 
     def __init__(
         self,
         model: str = DEFAULT_MODEL,
-        enabled: bool = True,
+        enabled: bool = False,
         differential: bool = False,
         source: str = "",
         console: Console | None = None,
@@ -157,13 +179,15 @@ class GenerationQualityCheck(BaseCheck):
     ) -> CheckResult:
         if not self.enabled:
             return self.not_evaluable(
-                "Generation Quality is disabled. Remove --no-generation to enable."
+                "Sample Generation did not run. Pass --with-generation to "
+                "have a model write code from these docs (uses the Anthropic "
+                "API; one call, or two with --differential)."
             )
 
         if not has_api_key():
             return self.not_evaluable(
                 "ANTHROPIC_API_KEY is not set. Export it to enable the "
-                "empirical Generation Quality check."
+                "Sample Generation check."
             )
 
         if len(content.strip()) < 100:
@@ -216,10 +240,10 @@ class GenerationQualityCheck(BaseCheck):
             )
         except GenerationError as exc:
             # Baseline failed but we have an informed result; return informed
-            # with a note that differential measurement was unavailable.
-            informed_eval.setdefault("findings", []).append(
+            # with a note that differential comparison was unavailable.
+            informed_eval["commentary"].append(
                 f"⚠ Differential baseline call failed: {exc}. "
-                "Reporting informed score without delta."
+                "Reporting the docs-informed sample without comparison."
             )
             return _build_result(
                 self,
@@ -231,15 +255,15 @@ class GenerationQualityCheck(BaseCheck):
 
         baseline_code = _extract_code(baseline_result.text)
         if not baseline_code:
-            # Model declined to guess. Treat baseline as 0/10 (no training
-            # knowledge of this API), so the informed score is entirely from
-            # the docs.
+            # Model declined to guess: no training knowledge of this API.
             baseline_eval = {
-                "score": 0,
                 "criteria": {},
+                "criteria_met": 0,
                 "gap_count": 0,
-                "raw_score": 0,
+                "structural_score": 0,
                 "line_count": 0,
+                "commentary": [],
+                "recommendations": [],
             }
         else:
             baseline_eval = _evaluate(baseline_code)
@@ -284,32 +308,56 @@ def _build_identifier(parsed: Any, source: str) -> str:
     return "\n".join(lines)
 
 
-def _generation_error_result(check: "GenerationQualityCheck", exc: Exception) -> CheckResult:
+def _informational(
+    check: "SampleGenerationCheck",
+    findings: list[str],
+    recommendations: list[str],
+    metadata: dict[str, Any],
+) -> CheckResult:
+    """Build an informational (unscored) CheckResult for Sample Generation."""
     return CheckResult(
         name=check.name,
         description=check.description,
-        score=0,
+        score=None,
         max_score=check.max_score,
-        severity=check.severity_for(0),
-        findings=[f"Generation failed: {exc}"],
+        severity=Severity.NOT_EVALUABLE,
+        findings=findings,
+        recommendations=recommendations,
+        metadata=metadata,
+        informational=True,
+    )
+
+
+def _generation_error_result(
+    check: "SampleGenerationCheck", exc: Exception
+) -> CheckResult:
+    """The generation call failed outright — there is no sample to show."""
+    return CheckResult(
+        name=check.name,
+        description=check.description,
+        score=None,
+        max_score=check.max_score,
+        severity=Severity.NOT_EVALUABLE,
+        findings=[f"Sample generation could not run: {exc}"],
         recommendations=[
             "If this is a temporary overload (HTTP 529 or 429), wait a few "
             "minutes and try again. For other errors, check ANTHROPIC_API_KEY "
-            "and your network. Use --no-generation to skip this check entirely."
+            "and your network, or omit --with-generation to skip this check."
         ],
         metadata={"error": str(exc)},
     )
 
 
 def _no_code_result(
-    check: "GenerationQualityCheck", result: "GenerationResult"
+    check: "SampleGenerationCheck", result: "GenerationResult"
 ) -> CheckResult:
+    """The model replied but produced no code block — nothing to present."""
     return CheckResult(
         name=check.name,
         description=check.description,
-        score=0,
+        score=None,
         max_score=check.max_score,
-        severity=check.severity_for(0),
+        severity=Severity.NOT_EVALUABLE,
         findings=[
             "The model returned a response but no Python code block. "
             "This usually means the documentation didn't contain enough "
@@ -330,7 +378,7 @@ def _no_code_result(
 
 
 def _build_result(
-    check: "GenerationQualityCheck",
+    check: "SampleGenerationCheck",
     code: str,
     informed_result: "GenerationResult",
     informed_eval: dict[str, Any],
@@ -340,22 +388,23 @@ def _build_result(
     baseline_code: str | None = None,
     identifier: str | None = None,
 ) -> CheckResult:
-    """Build the final CheckResult, with differential context if available."""
-    score = informed_eval["score"]
-    severity = check.severity_for(score)
-
+    """Build the informational CheckResult, with differential context if any."""
     findings = [
         f"Model: {informed_result.model}",
         f"Tokens: {informed_result.input_tokens:,} input, "
         f"{informed_result.output_tokens:,} output",
-        f"Generated {informed_eval['line_count']} lines of Python",
-        *informed_eval["findings"],
+        f"Generated {informed_eval['line_count']} lines of Python from "
+        f"your documentation.",
     ]
     if truncated:
-        findings.insert(
-            0,
-            f"Docs were truncated to {MAX_DOCS_CHARS:,} characters before generation.",
+        findings.append(
+            f"Docs were truncated to {MAX_DOCS_CHARS:,} characters before "
+            f"generation."
         )
+
+    findings.append("")
+    findings.append("What the generated code contains (commentary, not a score):")
+    findings.extend(informed_eval["commentary"])
 
     recommendations = list(informed_eval["recommendations"])
     metadata: dict[str, Any] = {
@@ -365,39 +414,53 @@ def _build_result(
         "stop_reason": informed_result.stop_reason,
         "code": code,
         "criteria": informed_eval["criteria"],
+        "criteria_met": informed_eval["criteria_met"],
         "gap_count": informed_eval.get("gap_count", 0),
-        "raw_score": informed_eval.get("raw_score", score),
         "docs_truncated": truncated,
     }
 
     if baseline_eval is not None:
-        baseline_score = baseline_eval["score"]
-        delta = score - baseline_score
+        baseline_met = baseline_eval["criteria_met"]
+        informed_met = informed_eval["criteria_met"]
+        contaminated = (
+            baseline_eval.get("structural_score", 0) >= CONTAMINATION_THRESHOLD
+        )
+
+        if contaminated:
+            # The contamination warning is the headline of a differential run:
+            # it tells the reader the comparison below is not about the docs.
+            findings.insert(
+                0,
+                "⚠ Contamination warning: this model has training-data "
+                "familiarity with this API. The generated code primarily "
+                "reflects model capability, not docs quality.",
+            )
+
         findings.extend([
             "",
-            "Differential measurement:",
-            f"  Baseline (training-only) score: {baseline_score}/10",
-            f"  Informed (with docs) score: {score}/10",
-            f"  Docs contribution: {delta:+d} points",
+            "Differential comparison (does the model already know this API?):",
+            f"  Without your docs, the model's code met {baseline_met} of 5 "
+            f"structural criteria.",
+            f"  With your docs, the generated code met {informed_met} of 5.",
         ])
-        if baseline_score >= 7:
-            recommendations.append(
-                "The baseline score is high, which means the model already "
-                "knows this API well from training. The informed score "
-                "primarily reflects model capability, not docs quality. "
-                "This measurement is most reliable for internal or novel "
+        if contaminated:
+            findings.append(
+                "  Because the baseline is already strong, treat the "
+                "docs-informed sample as a capability demo, not a docs grade. "
+                "Differential mode is most informative for internal or novel "
                 "APIs the model has not seen."
             )
-        elif delta <= 1:
+        elif informed_met <= baseline_met:
             recommendations.append(
-                "The docs added little measurable signal beyond what the "
-                "model already knew. If the baseline score is low, this "
-                "suggests the docs are not providing enough structured "
-                "information for code generation."
+                "The docs added little structural signal beyond what the "
+                "model already knew. If the baseline sample is also weak, "
+                "the docs are not providing enough structured information "
+                "for code generation."
             )
-        metadata["baseline_score"] = baseline_score
-        metadata["baseline_raw_score"] = baseline_eval.get("raw_score", baseline_score)
-        metadata["delta"] = delta
+
+        metadata["baseline_criteria"] = baseline_eval["criteria"]
+        metadata["baseline_criteria_met"] = baseline_met
+        metadata["contamination_warning"] = contaminated
         metadata["identifier"] = identifier
         if baseline_code:
             metadata["baseline_code"] = baseline_code
@@ -405,16 +468,7 @@ def _build_result(
             metadata["baseline_input_tokens"] = baseline_result.input_tokens
             metadata["baseline_output_tokens"] = baseline_result.output_tokens
 
-    return CheckResult(
-        name=check.name,
-        description=check.description,
-        score=score,
-        max_score=check.max_score,
-        severity=severity,
-        findings=findings,
-        recommendations=recommendations,
-        metadata=metadata,
-    )
+    return _informational(check, findings, recommendations, metadata)
 
 
 def _extract_code(text: str) -> str | None:
@@ -430,7 +484,12 @@ def _extract_code(text: str) -> str | None:
 
 
 def _evaluate(code: str) -> dict[str, Any]:
-    """Score generated code on five criteria and produce findings."""
+    """Inspect generated code on five structural criteria.
+
+    Returns the raw observations plus human-readable commentary. The
+    `structural_score` is a legacy 0-10 figure kept only to drive the
+    differential contamination warning; it is never surfaced as a grade.
+    """
     criteria = {
         "parses_as_python": False,
         "imports_http_client": False,
@@ -440,10 +499,10 @@ def _evaluate(code: str) -> dict[str, Any]:
     }
 
     try:
-        tree = ast.parse(code)
+        ast.parse(code)
         criteria["parses_as_python"] = True
     except SyntaxError:
-        tree = None
+        pass
 
     lower_code = code.lower()
     line_count = code.count("\n") + 1
@@ -487,42 +546,32 @@ def _evaluate(code: str) -> dict[str, Any]:
     ):
         criteria["handles_response"] = True
 
-    score = sum(2 for passed in criteria.values() if passed)
+    criteria_met = sum(1 for passed in criteria.values() if passed)
 
-    # Count gap markers in the generated code. Each is evidence of a real
-    # documentation deficiency that the model had to work around, and
-    # reduces the score by 1 (floored at 0).
-    gap_markers = GAP_MARKER_PATTERN.findall(code)
-    gap_count = len(gap_markers)
-    raw_score = score
-    score = max(0, score - gap_count)
+    # Count gap markers: each is a detail the model says the docs didn't
+    # provide and had to work around. Pure commentary, not a deduction.
+    gap_count = len(GAP_MARKER_PATTERN.findall(code))
 
-    findings = []
-    recommendations = []
+    # Legacy structural score, internal only (see CONTAMINATION_THRESHOLD).
+    structural_score = max(0, criteria_met * 2 - gap_count)
 
-    label_map = {
-        "parses_as_python": "Valid Python syntax",
-        "imports_http_client": "Imports an HTTP client (requests, httpx, urllib, aiohttp)",
-        "handles_errors": "Includes error handling (try/except or status checks)",
-        "constructs_request": "Constructs an HTTP request",
-        "handles_response": "Handles the response body or status",
-    }
+    commentary: list[str] = []
     for key, passed in criteria.items():
         marker = "✓" if passed else "✗"
-        findings.append(f"{marker} {label_map[key]}")
-
+        commentary.append(f"{marker} {CRITERIA_LABELS[key]}")
     if gap_count:
-        findings.append(
+        commentary.append(
             f"⚠ Model flagged {gap_count} documentation gap"
-            f"{'s' if gap_count != 1 else ''} in code comments "
-            f"(structural score {raw_score}/10, adjusted to {score}/10)"
+            f"{'s' if gap_count != 1 else ''} as inline code comments."
         )
+
+    recommendations: list[str] = []
+    if gap_count:
         recommendations.append(
             "The model flagged details the docs did not provide and worked "
             "around them with placeholders or guesses. The exact gaps appear "
             "as comments in the generated code; fix those in the source docs."
         )
-
     if not criteria["parses_as_python"]:
         recommendations.append(
             "The model produced syntactically invalid Python. This usually "
@@ -545,11 +594,11 @@ def _evaluate(code: str) -> dict[str, Any]:
         )
 
     return {
-        "score": score,
         "criteria": criteria,
-        "findings": findings,
+        "criteria_met": criteria_met,
+        "commentary": commentary,
         "recommendations": recommendations,
         "line_count": line_count,
         "gap_count": gap_count,
-        "raw_score": raw_score,
+        "structural_score": structural_score,
     }

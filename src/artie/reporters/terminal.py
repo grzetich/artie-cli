@@ -8,6 +8,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
+from artie.baseline import Baseline
 from artie.checks.base import CheckResult, Severity
 
 SEVERITY_STYLE: dict[Severity, str] = {
@@ -27,12 +28,40 @@ SEVERITY_SYMBOL: dict[Severity, str] = {
 }
 
 
+def _visuals(result: CheckResult) -> tuple[str, str]:
+    """Return the (symbol, style) for a check result.
+
+    Informational checks (Sample Generation) get their own neutral treatment
+    so they don't read as either a pass or a failure.
+    """
+    if result.informational:
+        return "ℹ", "cyan"
+    return SEVERITY_SYMBOL[result.severity], SEVERITY_STYLE[result.severity]
+
+
+def _delta_cell(result: CheckResult, baseline: Baseline | None) -> Text:
+    """Render the baseline-comparison cell for one check."""
+    if baseline is None:
+        return Text("")
+    delta = baseline.delta_for(result.name, result.score)
+    if delta is None:
+        if result.name not in baseline.scores:
+            return Text("new", style="dim")
+        return Text("—", style="dim")
+    if delta > 0:
+        return Text(f"+{delta}", style="green")
+    if delta < 0:
+        return Text(str(delta), style="red")
+    return Text("0", style="dim")
+
+
 def render(
     source: str,
     format_type: str,
     results: list[CheckResult],
     console: Console | None = None,
     content_type: str | None = None,
+    baseline: Baseline | None = None,
 ) -> None:
     """Render an analysis report to the terminal."""
     console = console or Console()
@@ -52,6 +81,9 @@ def render(
             style="dim cyan",
         )
     header.append(f"\nRetrieved: {timestamp}", style="dim")
+    if baseline is not None:
+        label = baseline.source or (str(baseline.path) if baseline.path else "?")
+        header.append(f"\nCompared against baseline: {label}", style="dim cyan")
     console.print(Panel(header, expand=False))
 
     table = Table(show_header=True, header_style="bold", expand=False)
@@ -59,23 +91,31 @@ def render(
     table.add_column("Check")
     table.add_column("Score", justify="right")
     table.add_column("Severity")
+    if baseline is not None:
+        table.add_column("Δ", justify="right")
 
     for result in results:
-        style = SEVERITY_STYLE[result.severity]
-        symbol = SEVERITY_SYMBOL[result.severity]
-        severity_label = result.severity.value.replace("_", " ")
-        table.add_row(
+        symbol, style = _visuals(result)
+        severity_label = (
+            "informational"
+            if result.informational
+            else result.severity.value.replace("_", " ")
+        )
+        row = [
             Text(symbol, style=style),
             result.name,
             result.score_display,
             Text(severity_label, style=style),
-        )
+        ]
+        if baseline is not None:
+            row.append(_delta_cell(result, baseline))
+        table.add_row(*row)
 
     console.print(table)
 
     # Per-check detail sections
     for result in results:
-        _render_check_detail(result, console)
+        _render_check_detail(result, console, baseline)
 
     cta = Text()
     cta.append(
@@ -85,9 +125,11 @@ def render(
     console.print(Panel(cta, expand=False))
 
 
-def _render_check_detail(result: CheckResult, console: Console) -> None:
+def _render_check_detail(
+    result: CheckResult, console: Console, baseline: Baseline | None
+) -> None:
     """Render a single check's detail panel, including code block if present."""
-    style = SEVERITY_STYLE[result.severity]
+    _, style = _visuals(result)
     body = Text()
     if result.findings:
         body.append("Findings:\n", style="bold")
@@ -112,10 +154,16 @@ def _render_check_detail(result: CheckResult, console: Console) -> None:
     else:
         content = body
 
+    title = f"{result.name} — {result.score_display}"
+    if baseline is not None:
+        delta = baseline.delta_for(result.name, result.score)
+        if delta is not None:
+            title += f" ({delta:+d} vs baseline)"
+
     console.print(
         Panel(
             content,
-            title=f"{result.name} — {result.score_display}",
+            title=title,
             title_align="left",
             border_style=style,
             expand=False,

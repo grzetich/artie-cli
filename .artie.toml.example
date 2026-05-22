@@ -1,0 +1,32 @@
+# .artie.toml — per-project configuration for artie-cli.
+#
+# Copy this file to `.artie.toml` in your repository root. artie discovers it
+# automatically by searching the working directory and its parents; you can
+# also point at one explicitly with `artie check --config path/to/.artie.toml`.
+#
+# Command-line flags always override what is set here. Every section is
+# optional. See docs/scoring.md for what the thresholds mean.
+
+# Checks excluded from the pass/fail gate. They still run and appear in the
+# report — they just cannot fail the build. Use this for checks that don't
+# apply to your API rather than disabling the gate entirely.
+ignore = ["Schema Complexity"]
+
+[defaults]
+# Default values for CLI flags, so CI doesn't need a long command line.
+with_generation = false        # run the opt-in Sample Generation check
+differential = false           # differential mode (implies with_generation)
+model = "claude-sonnet-4-6"     # model for Sample Generation
+fail_under = 7                  # global gate threshold for checks without
+                                # a per-check threshold below (0-10)
+
+[thresholds]
+# Per-check minimum scores. A check scoring below its threshold fails the
+# run (exit code 1). These take precedence over defaults.fail_under and over
+# the --fail-under CLI flag. Names must match the check names exactly.
+"Format Efficiency" = 9
+"Endpoint Completeness" = 8
+"Example Coverage" = 7
+"Error Documentation" = 7
+"Auth Clarity" = 7
+"Parameter Naming" = 8

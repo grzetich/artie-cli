@@ -18,14 +18,14 @@ pipx install artie-cli
 artie check ./openapi.yaml
 ```
 
-For the empirical Generation Quality check, set an Anthropic API key:
+By default artie runs the seven static checks, entirely offline. The optional Sample Generation check is opt-in: pass `--with-generation` and set an Anthropic API key.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-artie check ./openapi.yaml
+artie check ./openapi.yaml --with-generation
 ```
 
-Without a key, artie still runs the seven static checks and reports their results. The Generation Quality check shows as N/A with a note about how to enable it.
+Without `--with-generation`, Sample Generation shows as N/A with a note on how to enable it.
 
 ## What it checks
 
@@ -39,11 +39,13 @@ Without a key, artie still runs the seven static checks and reports their result
 - **Parameter Naming**: consistent naming convention across parameters and schema properties
 - **Schema Complexity**: nesting depth across component schemas
 
-**One empirical check**, applied to any input format:
+Each static check scores 0–10. Every threshold and weighting is documented in [docs/scoring.md](docs/scoring.md), along with which numbers are empirically grounded and which are heuristics awaiting calibration. artie deliberately reports no aggregate score.
 
-- **Generation Quality**: an AI model is given your docs and asked to write a Python function that calls the API. The check evaluates what it produced on five criteria: valid syntax, HTTP client import, error handling, request construction, and response handling. The generated code is included in the report so you can see exactly what the model wrote from your docs.
+**One optional, opt-in check**, applied to any input format:
 
-The static checks tell you what specifically to fix. The Generation Quality check tells you whether the fixes are working. Static checks return N/A when the input isn't OpenAPI. Generation Quality runs against anything.
+- **Sample Generation**: an AI model is given your docs and asked to write a Python function that calls the API. The generated code is the deliverable — artie includes it in the report so you can see exactly what an agent writes from your docs, and comments on its structure (valid syntax, HTTP client import, error handling, request construction, response handling). It is **not scored**: one generation against one model is a sample, not a measurement. Enable it with `--with-generation`.
+
+The static checks tell you what specifically to fix. Sample Generation shows you a concrete example of what an agent produces. Static checks return N/A when the input isn't OpenAPI; Sample Generation runs against anything.
 
 ## Inputs
 
@@ -64,40 +66,45 @@ When fetching URLs, artie sends an `Accept` header that requests structured form
 ## Output formats
 
 ```bash
-# Pretty terminal output with the generated code highlighted (default)
+# Pretty terminal output (default); static checks only, fully offline
 artie check ./openapi.yaml
 
-# JSON for CI pipelines
+# JSON for CI pipelines (includes scoring_version)
 artie check ./openapi.yaml --output json
 
 # Fail the build if any check scores below 7
 artie check ./openapi.yaml --fail-under 7
 
-# Skip the LLM call (faster, no API cost)
-artie check ./openapi.yaml --no-generation
+# Compare against a previously saved JSON report and show per-check deltas
+artie check ./openapi.yaml --baseline previous.json
 
-# Use a different model for generation
-artie check ./openapi.yaml --model claude-opus-4-7
+# Run the opt-in Sample Generation check (uses the Anthropic API)
+artie check ./openapi.yaml --with-generation
 
-# Differential mode: measure what the docs add beyond training (doubles cost)
+# Differential mode: flag training-data contamination (implies --with-generation, doubles cost)
 artie check ./openapi.yaml --differential
+
+# Use a different model for Sample Generation
+artie check ./openapi.yaml --with-generation --model claude-opus-4-7
 ```
 
-## About generation quality and training contamination
+## Configuration
 
-The Generation Quality check has a real limitation worth understanding. When the model has seen an API during training (which is the case for AWS, Stripe, GitHub, and most public APIs with Python SDKs on PyPI), it can write working code from training alone, regardless of how complete the docs you're testing are. A 10/10 score on a famous API tells you the model knows the API, not that the docs are good.
+Drop a `.artie.toml` in your repository root to pin per-check pass/fail thresholds, exclude checks from the gate, and set default flags. artie discovers it automatically from the working directory upward. See [`.artie.toml.example`](.artie.toml.example) for the full schema and [docs/scoring.md](docs/scoring.md) for what the thresholds mean.
 
-The check mitigates this two ways:
+## About Sample Generation and training contamination
 
-The prompt instructs the model to use only information from the docs and to flag gaps in code comments. Gap comments are detected automatically and reduce the score by 1 each. This shifts the failure mode from "writes confident wrong code" to "writes hedgy code with explicit gap markers," which is more useful.
+Sample Generation has a real limitation worth understanding. When the model has seen an API during training (which is the case for AWS, Stripe, GitHub, and most public APIs with Python SDKs on PyPI), it can write working code from training alone, regardless of how complete the docs you're testing are. Good-looking code for a famous API tells you the model knows the API, not that the docs are good.
 
-`--differential` mode adds a second API call with no docs body, measuring what the model produces from training alone. The delta between the two scores is what the docs actually contributed. This doubles the API cost but produces the most honest measurement, especially valuable for novel or internal APIs the model has not seen.
+This is exactly why the check is unscored: a grade would imply a measurement the method can't honestly deliver. Instead artie shows you the generated code and comments on its structure.
 
-For docs the model already knows well, expect a high baseline and a small delta. That's not a failure of your docs; it's the limit of what empirical generation testing can tell you for that API.
+The prompt instructs the model to use only information from the docs and to flag gaps in inline code comments. artie detects those gap comments automatically and reports them as evidence of real documentation deficiencies.
+
+`--differential` mode adds a second API call with no docs body, measuring what the model produces from training alone. When that baseline is already strong, artie prints a contamination warning: the docs-informed sample reflects model capability, not docs quality. Differential mode is most informative for novel or internal APIs the model has not seen.
 
 ## Cost
 
-The Generation Quality check makes one Anthropic API call per artie run. On Claude Sonnet 4.6 (the default), a typical docs page costs about $0.02 to $0.05 per run. For CI integration that runs on every PR, use `--no-generation` for fast feedback and run the full suite on a schedule.
+Sample Generation makes one Anthropic API call per run (two with `--differential`). On Claude Sonnet 4.6 (the default), a typical docs page costs roughly $0.02 to $0.05 per run at retail pricing. Because the check is opt-in, CI runs stay free and offline unless you explicitly ask for it.
 
 ## Examples
 
@@ -109,7 +116,7 @@ artie check examples/sample-openapi.yaml
 
 ## Privacy
 
-The static checks run entirely locally. The Generation Quality check sends your documentation content to Anthropic's API. If your docs are confidential, use `--no-generation` or unset `ANTHROPIC_API_KEY` to skip the empirical check.
+The static checks run entirely locally. Sample Generation sends your documentation content to Anthropic's API — but it is opt-in, so nothing leaves your machine unless you pass `--with-generation`.
 
 ## Why a CLI
 
@@ -123,7 +130,7 @@ artie's checks are grounded in empirical findings published in *Tokens Not Jokin
 - Documentation format explains more than 10x the variance in generated code quality than model choice
 - Disciplined error documentation produces dramatically better error handling in generated code
 
-The Generation Quality check uses the same methodology as TNJ, applied per-spec: ask an AI to write code from these docs, then evaluate what it produced.
+The Sample Generation check uses the same methodology as TNJ, applied per-spec: ask an AI to write code from these docs, then show what it produced.
 
 Buy the book: [leanpub.com/tokensnotjokin](https://leanpub.com/tokensnotjokin)
 

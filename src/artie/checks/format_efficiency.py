@@ -107,6 +107,10 @@ class FormatEfficiencyCheck(BaseCheck):
                     f"  {model_label}: {_format_per_call(per_call)}/read, "
                     f"${per_million_reads:,.0f}/1M reads"
                 )
+            findings.append(
+                "  Retail pricing before caching, batch, or enterprise "
+                "discounts (real-world cost typically 10-100x lower)."
+            )
 
         # Surface positive signals from the parser, when present.
         if (

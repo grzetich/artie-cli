@@ -65,7 +65,7 @@ def generate(
     if not api_key:
         raise MissingAPIKeyError(
             "ANTHROPIC_API_KEY is not set. Export it to enable the "
-            "Generation Quality check."
+            "Sample Generation check."
         )
 
     body = {
@@ -106,7 +106,7 @@ def generate(
                 raise GenerationError(
                     f"Anthropic API is temporarily overloaded (HTTP {exc.code}) "
                     f"after {MAX_RETRIES + 1} attempts. Wait a few minutes and "
-                    f"try again, or use --no-generation to skip this check."
+                    f"try again, or omit --with-generation to skip this check."
                 ) from exc
             if exc.code == 401:
                 raise GenerationError(

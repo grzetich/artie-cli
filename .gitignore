@@ -1,0 +1,23 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+
+# Test and tooling caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local artie config (the example template is tracked; a real one is not)
+.artie.toml
+
+# Editor noise
+.DS_Store

@@ -7,15 +7,16 @@ git clone https://github.com/grzetich/artie-cli
 cd artie-cli
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
-artie check examples/bookclub-openapi.yaml --no-generation
+pip install -e ".[dev]"
+artie check examples/bookclub-openapi.yaml
+pytest
 ```
 
-If you want to exercise the Generation Quality check, export an Anthropic API key:
+The static checks and the test suite are fully offline. If you want to exercise the opt-in Sample Generation check, export an Anthropic API key and pass `--with-generation`:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-artie check examples/bookclub-openapi.yaml
+artie check examples/bookclub-openapi.yaml --with-generation
 ```
 
 Read `ARCHITECTURE.md` before touching the code. It explains the request flow, the check protocol, and the design decisions that constrain implementation choices.
@@ -110,21 +111,29 @@ Document threshold choices in code comments at the top of the check. Future cali
 
 ## Tests
 
-Tests live under `tests/` (forthcoming). Use pytest. Cover at minimum:
+Tests live under `tests/` and use pytest. Run them with `pytest` (the
+configuration in `pyproject.toml` handles the source path). The suite is
+fully offline — no test calls the Anthropic API.
 
-- Each check's scoring math, including the edge cases for not-evaluable.
-- The format detector across all supported formats.
-- The OpenAPI parser including embedded extraction from markdown.
-- The fetcher's content-type hint logic without making real network calls.
-- The generator's retry behavior using mocked HTTP responses.
+Current coverage:
 
-Run with `pytest`. CI should run the suite on every push.
+- Each check's scoring math and the Schema Complexity threshold buckets, including not-evaluable edge cases (`test_checks_scoring.py`).
+- The format detector across all supported formats (`test_format_detector.py`).
+- The OpenAPI parser including embedded extraction from markdown (`test_parser.py`).
+- Sample Generation internals: the gap-marker regex, the identifier builder, and code evaluation (`test_generation_eval.py`, `test_sample_generation.py`).
+- Config loading, baseline deltas, the pass/fail gate, and scoring-version sync (`test_config.py`, `test_baseline.py`, `test_gate.py`, `test_scoring_version.py`).
+
+Still uncovered and worth adding: the fetcher's content-type hint logic and
+the generator's retry behavior, both with mocked HTTP responses.
+
+`.github/workflows/ci.yml` runs the suite on every push and pull request
+across Python 3.10–3.12.
 
 ## Versioning
 
 Bump the version in `pyproject.toml` and `src/artie/__init__.py` together. They must match. Use semver. A change to the scoring rubric is a minor version bump because it changes user-visible behavior even when code APIs do not change.
 
-Track the scoring rubric version separately when it diverges from the package version. Include it in JSON output so downstream tooling can pin against it.
+The scoring rubric is versioned separately from the package. `artie.SCORING_VERSION` is the runtime source of truth; `pyproject.toml [tool.artie] scoring_version` mirrors it, and `tests/test_scoring_version.py` fails if the two drift. Bump it whenever a threshold, bucket, or weighting changes, and update `docs/scoring.md` in the same commit. It is emitted in JSON output so downstream tooling can pin against it.
 
 ## Pull requests
 

@@ -27,14 +27,25 @@ class CheckResult:
     findings: list[str] = field(default_factory=list)
     recommendations: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    # An informational check ran and produced findings, but deliberately
+    # assigns no score. Sample Generation is the only one: it presents
+    # generated code as a deliverable, not a 0-10 grade.
+    informational: bool = False
 
     @property
     def is_evaluable(self) -> bool:
-        return self.severity != Severity.NOT_EVALUABLE
+        """True when this check produced a numeric score worth gating on.
+
+        Excludes both not-evaluable results (the check couldn't run) and
+        informational results (the check ran but assigns no score).
+        """
+        return self.severity != Severity.NOT_EVALUABLE and not self.informational
 
     @property
     def score_display(self) -> str:
-        if not self.is_evaluable:
+        if self.informational:
+            return "—"
+        if self.severity == Severity.NOT_EVALUABLE:
             return "N/A"
         return f"{self.score}/{self.max_score}"
 
