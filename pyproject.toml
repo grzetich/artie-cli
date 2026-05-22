@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "artie-cli"
+version = "0.7.0"
+description = "Score your API documentation for AI-readiness. Based on the Tokens Not Jokin' research."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Ed Grzetich", email = "ed@grzeti.ch" }
+]
+keywords = ["api", "documentation", "ai", "llm", "openapi", "developer-tools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Documentation",
+    "Topic :: Software Development :: Documentation",
+]
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0",
+    "tiktoken>=0.7.0",
+]
+
+[project.urls]
+Homepage = "https://artie.fm"
+Repository = "https://github.com/grzetich/artie-cli"
+Research = "https://leanpub.com/tokensnotjokin"
+
+[project.scripts]
+artie = "artie.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/artie"]

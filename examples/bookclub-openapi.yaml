@@ -1,0 +1,160 @@
+openapi: 3.0.3
+info:
+  title: BookClub API
+  version: 1.0.0
+  description: A reference book club service. Used as a comprehensive example for artie-cli.
+servers:
+  - url: https://api.bookclub.example.com/v1
+security:
+  - bearer_auth: []
+paths:
+  /clubs:
+    get:
+      operationId: list_clubs
+      summary: List all clubs the caller belongs to.
+      description: Returns clubs sorted by most recently active. Pagination is forthcoming.
+      responses:
+        '200':
+          description: A list of clubs the caller belongs to.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Club'
+              example:
+                - id: "club_01"
+                  name: "Wednesday Readers"
+                  member_count: 12
+        '401':
+          description: The caller is not authenticated. Refresh credentials and retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: create_club
+      summary: Create a new club.
+      description: Creates a new club with the caller as the founding member.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClubCreate'
+            example:
+              name: "Tuesday Night Sci-Fi"
+              description: "Hard sci-fi every other Tuesday."
+      responses:
+        '201':
+          description: The newly created club.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Club'
+              example:
+                id: "club_02"
+                name: "Tuesday Night Sci-Fi"
+                member_count: 1
+        '400':
+          description: The request body is invalid. See the error details for which fields failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The caller is not authenticated. Refresh credentials and retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /clubs/{club_id}:
+    get:
+      operationId: get_club
+      summary: Retrieve a single club by ID.
+      description: Returns the full club record including member list.
+      parameters:
+        - name: club_id
+          in: path
+          required: true
+          description: The unique identifier of the club to retrieve.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested club.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Club'
+              example:
+                id: "club_01"
+                name: "Wednesday Readers"
+                member_count: 12
+        '404':
+          description: No club exists with the given ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    bearer_auth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Bearer authentication using a JWT issued by the BookClub auth service.
+        See https://api.bookclub.example.com/docs/auth for how to obtain a token.
+  schemas:
+    Club:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the club.
+        name:
+          type: string
+          description: Display name of the club.
+        description:
+          type: string
+          description: Optional longer description.
+        member_count:
+          type: integer
+          description: Number of members currently in the club.
+    ClubCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Display name for the new club.
+        description:
+          type: string
+          description: Optional longer description.
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: A short machine-readable error code.
+        message:
+          type: string
+          description: A human-readable explanation of the error.
+        details:
+          type: array
+          description: Optional list of field-level errors for validation failures.
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              issue:
+                type: string

@@ -1,0 +1,48 @@
+openapi: 3.0.3
+info:
+  title: Broken Books API
+  version: 1.0.0
+paths:
+  /Books:
+    get:
+      responses:
+        '200':
+          description: ok
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                bookTitle:
+                  type: string
+                BookAuthor:
+                  type: string
+                book-genre:
+                  type: string
+      responses:
+        '200':
+          description: ok
+  /Books/{ID}:
+    get:
+      parameters:
+        - name: ID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ok
+    delete:
+      parameters:
+        - name: ID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: ok

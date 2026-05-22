@@ -1,0 +1,55 @@
+openapi: 3.0.3
+info:
+  title: BookClub API
+  version: 1.0.0
+  description: Sample API for testing artie-cli.
+servers:
+  - url: https://api.example.com/v1
+paths:
+  /books:
+    get:
+      operationId: listBooks
+      summary: List all books
+      responses:
+        '200':
+          description: A list of books.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Book'
+  /books/{bookId}:
+    get:
+      operationId: getBook
+      summary: Get a book by ID
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          description: The unique identifier of the book to retrieve.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A single book.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Book'
+        '404':
+          description: Book not found.
+components:
+  schemas:
+    Book:
+      type: object
+      required:
+        - id
+        - title
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        author:
+          type: string
