@@ -33,7 +33,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://artie.fm"
+Homepage = "https://github.com/grzetich/artie-cli"
 Repository = "https://github.com/grzetich/artie-cli"
 Research = "https://leanpub.com/tokensnotjokin"
 
