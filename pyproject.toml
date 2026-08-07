@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "artie-cli"
-version = "0.7.0"
+version = "0.7.1"
 description = "Score your API documentation for AI-readiness. Based on the Tokens Not Jokin' research."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "Ed Grzetich", email = "ed@grzeti.ch" }
+    { name = "Ed Grzetich", email = "ed.grzetich@gmail.com" }
 ]
 keywords = ["api", "documentation", "ai", "llm", "openapi", "developer-tools"]
 classifiers = [
@@ -35,7 +35,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/grzetich/artie-cli"
 Repository = "https://github.com/grzetich/artie-cli"
-Research = "https://leanpub.com/tokensnotjokin"
+Research = "https://tokensnotjokin.com"
 
 [project.scripts]
 artie = "artie.cli:app"
