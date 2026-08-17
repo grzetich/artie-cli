@@ -29,13 +29,29 @@ FORMAT_SCORES: dict[str, int] = {
     "unknown": 5,
 }
 
-# Input pricing per million tokens for representative models, in USD.
-# Used to translate token counts into agent-read costs that a docs team
-# can put on a slide. These prices change occasionally; users should treat
-# them as ballpark figures, not invoices.
+# Input pricing per million tokens, in USD, for a frontier / balanced / cheap
+# spread. Used to translate token counts into agent-read costs that a docs
+# team can put on a slide.
+#
+# Ballpark figures, not invoices: list prices change, and they ignore prompt
+# caching, which is what a docs page actually gets in a real agent loop — a
+# page read repeatedly is billed at roughly a tenth of these rates after the
+# first read. The number to act on is the token count; these just make it
+# legible to someone who does not think in tokens.
+#
+# One non-Anthropic entry is kept deliberately: this tool tells docs teams to
+# change their format, and that argument lands better when the cost math is
+# not single-vendor.
+#
+# Standard (non-promotional) list prices, verified 2026-08 against Anthropic's
+# published pricing and developers.openai.com/api/docs/pricing. Re-check when
+# bumping the version; prefer standard rates over introductory ones so the
+# table does not silently expire.
 MODEL_INPUT_PRICING: dict[str, float] = {
-    "Claude Sonnet 4.6": 3.00,
-    "GPT-4o": 2.50,
+    "Claude Fable 5": 10.00,
+    "Claude Opus 5": 5.00,
+    "Claude Sonnet 5": 3.00,
+    "gpt-5.6-terra": 2.00,
     "Claude Haiku 4.5": 1.00,
 }
 
