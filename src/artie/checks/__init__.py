@@ -7,11 +7,13 @@ from artie.checks.error_documentation import ErrorDocumentationCheck
 from artie.checks.example_coverage import ExampleCoverageCheck
 from artie.checks.format_efficiency import FormatEfficiencyCheck
 from artie.checks.parameter_naming import ParameterNamingCheck
+from artie.checks.prose_structure import ProseStructureCheck
 from artie.checks.schema_complexity import SchemaComplexityCheck
 
 # Registry of all available checks, ordered roughly format -> content -> quality.
 ALL_CHECKS: list[type[BaseCheck]] = [
     FormatEfficiencyCheck,
+    ProseStructureCheck,
     EndpointCompletenessCheck,
     ExampleCoverageCheck,
     ErrorDocumentationCheck,

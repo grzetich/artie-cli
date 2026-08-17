@@ -9,6 +9,11 @@ Three signals contribute equally:
    calling and code generation).
 3. Path parameters with descriptions (agents must know what {bookId}
    actually identifies before constructing requests).
+
+The document's `servers` block is inspected and reported alongside these, but
+does not contribute to the score. A missing or schemeless base URL is a
+document-level defect rather than a per-endpoint one, and averaging it into
+the per-endpoint ratios would make one number mean two things.
 """
 
 from typing import Any
@@ -65,7 +70,10 @@ class EndpointCompletenessCheck(BaseCheck):
                 f"have descriptions"
             )
 
-        recommendations: list[str] = []
+        server_findings, server_recommendations = _server_findings(parsed.raw)
+        findings.extend(server_findings)
+
+        recommendations: list[str] = list(server_recommendations)
         if len(described) < len(endpoints):
             missing = [e.display for e in endpoints if not _has_description(e)][:5]
             recommendations.append(
@@ -101,8 +109,83 @@ class EndpointCompletenessCheck(BaseCheck):
                 "endpoints_with_operation_ids": len(with_op_id),
                 "path_parameters_total": path_param_total,
                 "path_parameters_described": path_param_described,
+                "servers": len((parsed.raw or {}).get("servers") or []),
             },
         )
+
+
+def _server_findings(raw: dict[str, Any] | None) -> tuple[list[str], list[str]]:
+    """Inspect the document's `servers` block. Returns (findings, recommendations).
+
+    Reported rather than scored: a broken base URL is a different failure from
+    an under-described operation, and folding it into the per-endpoint average
+    would make the score mean two things at once.
+
+    OpenAPI allows a relative server URL (`/v1`), so "no scheme" is only a
+    problem when the value looks like a host that lost its scheme
+    (`api.example.com/v1`) — that string is not resolvable by any client.
+    """
+    findings: list[str] = []
+    recommendations: list[str] = []
+
+    servers = (raw or {}).get("servers")
+    if not isinstance(servers, list) or not servers:
+        findings.append(
+            "✗ No servers block; the document never states a base URL"
+        )
+        recommendations.append(
+            "Add a `servers` entry with the absolute base URL. Without one an "
+            "agent has no origin to send requests to and must guess it from "
+            "prose or from a hostname it saw in an example."
+        )
+        return findings, recommendations
+
+    schemeless: list[str] = []
+    templated: list[str] = []
+    valid = 0
+
+    for entry in servers:
+        url = entry.get("url") if isinstance(entry, dict) else None
+        if not isinstance(url, str) or not url.strip():
+            schemeless.append(repr(url))
+            continue
+        url = url.strip()
+        if "://" in url:
+            valid += 1
+            continue
+        if url.startswith("{"):
+            # A fully templated origin like {region}.example.com. Legal, but
+            # unresolvable until the variable is substituted.
+            templated.append(url)
+            continue
+        if url.startswith("/"):
+            # Relative to the document's own origin: legal and resolvable.
+            valid += 1
+            continue
+        schemeless.append(url)
+
+    findings.append(
+        f"{valid} of {len(servers)} server URLs are absolute or resolvable"
+    )
+    if schemeless:
+        findings.append(
+            f"✗ Server URL missing a scheme: {', '.join(schemeless[:3])}"
+        )
+        recommendations.append(
+            "Prefix every server URL with its scheme (https://). A bare host "
+            "like `api.example.com/v1` is not a URL any HTTP client will "
+            "accept, so generated code fails on its first call."
+        )
+    if templated:
+        findings.append(
+            f"⚠ Server URL is fully templated: {', '.join(templated[:3])}"
+        )
+        recommendations.append(
+            "Give templated server variables a `default` so the URL resolves "
+            "without out-of-band knowledge."
+        )
+
+    return findings, recommendations
 
 
 def _has_description(endpoint: Endpoint) -> bool:

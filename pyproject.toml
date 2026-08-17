@@ -42,3 +42,12 @@ artie = "artie.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/artie"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# tests/ imports conftest helpers directly, and src/ is not installed in
+# editable mode during a plain `pytest` run.
+pythonpath = ["src", "tests"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]

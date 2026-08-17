@@ -11,7 +11,7 @@ from artie.checks import ALL_CHECKS, BaseCheck
 from artie.checks.generation_quality import GenerationQualityCheck
 from artie.fetcher import FetchError, fetch, is_url
 from artie.generator import DEFAULT_MODEL
-from artie.parsers import detect_format, parse
+from artie.parsers import detect_format, display_format, parse
 from artie.reporters import json_report, terminal
 
 app = typer.Typer(
@@ -128,6 +128,7 @@ def check(
         content_type_header = None
 
     parsed = parse(content, format_type)
+    format_label = display_format(format_type, parsed)
 
     # Instantiate all static checks plus the generation check with its flags.
     # The console only gets passed to the generation check when we're rendering
@@ -151,7 +152,11 @@ def check(
 
     output_lower = output.lower()
     if output_lower == "json":
-        typer.echo(json_report.render(source, format_type, results))
+        typer.echo(
+            json_report.render(
+                source, format_type, results, format_label=format_label
+            )
+        )
     elif output_lower == "terminal":
         terminal.render(
             source,
@@ -159,6 +164,7 @@ def check(
             results,
             console=console,
             content_type=content_type_header,
+            format_label=format_label,
         )
     else:
         raise typer.BadParameter(

@@ -110,13 +110,35 @@ Document threshold choices in code comments at the top of the check. Future cali
 
 ## Tests
 
-Tests live under `tests/` (forthcoming). Use pytest. Cover at minimum:
+Tests live under `tests/`. Use pytest; run the suite with `pytest` from the
+repository root (`pyproject.toml` puts `src/` and `tests/` on the path, so no
+install step is needed).
 
-- Each check's scoring math, including the edge cases for not-evaluable.
-- The format detector across all supported formats.
+Currently covered:
+
+- The shared schema/example helpers (`tests/test_schema_utils.py`).
+- Substance scoring in Example Coverage and Error Documentation
+  (`tests/test_checks_substance.py`).
+- Per-location parameter naming, the OpenAPI passthrough label, inline schema
+  analysis, servers validation, and Prose Structure
+  (`tests/test_checks_scoring.py`).
+- The generation prompt's provenance contract
+  (`tests/test_generation_prompt.py`), which fails if the instruction that
+  elicits gap-marker comments is edited away.
+
+Still uncovered, and worth adding:
+
+- The format detector across all supported formats. Note a known bug: content
+  with an embedded spec but no path suffix or Content-Type hint detects as
+  `openapi-yaml` and then fails to parse, sending every structured check to
+  N/A. See `detect_format`'s YAML branch.
 - The OpenAPI parser including embedded extraction from markdown.
 - The fetcher's content-type hint logic without making real network calls.
 - The generator's retry behavior using mocked HTTP responses.
+
+When a change alters what a score means rather than fixing a bug in how it is
+computed, say so in the check's module docstring. Scores are compared across
+runs, and a silent change of meaning is worse than a visible one.
 
 Run with `pytest`. CI should run the suite on every push.
 

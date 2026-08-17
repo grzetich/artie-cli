@@ -11,6 +11,7 @@ from typing import Any
 import tiktoken
 
 from artie.checks.base import BaseCheck, CheckResult, Severity
+from artie.parsers import display_format
 
 
 # Format efficiency scores out of 10. Anchored to TNJ data:
@@ -89,8 +90,9 @@ class FormatEfficiencyCheck(BaseCheck):
         char_count = len(content)
         token_count, token_source = _count_tokens(content)
 
+        label = display_format(format_type, parsed)
         findings = [
-            f"Detected format: {format_type}",
+            f"Detected format: {label}",
             f"Token count ({token_source}): {token_count:,}",
             f"Character count: {char_count:,}",
         ]
@@ -158,6 +160,7 @@ class FormatEfficiencyCheck(BaseCheck):
             recommendations=recommendations,
             metadata={
                 "format": format_type,
+                "format_label": label,
                 "tokens": token_count,
                 "characters": char_count,
             },

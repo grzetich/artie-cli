@@ -12,7 +12,10 @@ Three subscores:
 2. Description quality: of the error responses that exist, how many carry
    a description longer than a token or two.
 3. Schema coverage: of the error responses that exist, how many provide a
-   content schema (so agents know the shape of the error envelope).
+   content schema that actually describes a shape. A schema that declares no
+   fields (`{}`, or `properties: {}` with nothing else) is reported as a
+   placeholder rather than credited — it satisfies a linter but leaves an
+   agent with nothing to read off a failure.
 
 A shared Error schema in components.schemas is recognized as a positive
 signal and bumps the description-quality score.
@@ -20,6 +23,7 @@ signal and bumps the description-quality score.
 
 from typing import Any
 
+from artie.checks._schema_utils import is_vacuous_schema
 from artie.checks.base import BaseCheck, CheckResult
 from artie.parsers.types import Endpoint, ParsedDocs
 
@@ -45,11 +49,15 @@ class ErrorDocumentationCheck(BaseCheck):
         if not endpoints:
             return self.not_evaluable("No endpoints found in paths section.")
 
+        components = parsed.components if isinstance(parsed.components, dict) else {}
+
         endpoints_with_errors = 0
         total_error_responses = 0
         errors_with_description = 0
         errors_with_schema = 0
+        errors_with_vacuous_schema = 0
         missing_errors: list[str] = []
+        vacuous_examples: list[str] = []
 
         for endpoint in endpoints:
             error_responses = _error_responses(endpoint)
@@ -61,8 +69,12 @@ class ErrorDocumentationCheck(BaseCheck):
                 total_error_responses += 1
                 if _has_meaningful_description(response):
                     errors_with_description += 1
-                if _has_content_schema(response):
+                if _has_content_schema(response, components):
                     errors_with_schema += 1
+                elif _has_vacuous_content_schema(response, components):
+                    errors_with_vacuous_schema += 1
+                    if len(vacuous_examples) < 5:
+                        vacuous_examples.append(endpoint.display)
 
         has_shared_error_schema = _has_shared_error_schema(parsed.components)
 
@@ -90,6 +102,13 @@ class ErrorDocumentationCheck(BaseCheck):
             f"{errors_with_schema} of {total_error_responses} error responses "
             f"have a content schema",
         ]
+        if errors_with_vacuous_schema:
+            findings.append(
+                f"{errors_with_vacuous_schema} error response"
+                f"{'s' if errors_with_vacuous_schema != 1 else ''} declare a "
+                f"schema that describes no fields (e.g. `properties: {{}}`) "
+                f"and are not counted: {', '.join(vacuous_examples)}"
+            )
         if has_shared_error_schema:
             findings.append("Shared Error schema found in components.schemas")
         else:
@@ -107,6 +126,13 @@ class ErrorDocumentationCheck(BaseCheck):
                 "Replace boilerplate descriptions like 'error' or 'bad request' "
                 "with specific text explaining when the error occurs and what "
                 "the caller should do."
+            )
+        if errors_with_vacuous_schema:
+            recommendations.append(
+                "Replace placeholder error schemas that declare no fields "
+                "with the real error envelope. An empty `properties: {}` "
+                "looks documented to a linter but tells an agent nothing "
+                "about what it can read off a failure."
             )
         if total_error_responses and errors_with_schema < total_error_responses:
             recommendations.append(
@@ -135,6 +161,7 @@ class ErrorDocumentationCheck(BaseCheck):
                 "total_error_responses": total_error_responses,
                 "errors_with_description": errors_with_description,
                 "errors_with_schema": errors_with_schema,
+                "errors_with_vacuous_schema": errors_with_vacuous_schema,
                 "has_shared_error_schema": has_shared_error_schema,
             },
         )
@@ -160,14 +187,51 @@ def _has_meaningful_description(response: dict[str, Any]) -> bool:
     return len(description) >= MEANINGFUL_DESCRIPTION_CHARS
 
 
-def _has_content_schema(response: dict[str, Any]) -> bool:
+def _has_content_schema(
+    response: dict[str, Any], components: dict[str, Any]
+) -> bool:
+    """True if the response carries a schema that actually describes a shape.
+
+    A truthiness test on `schema` used to be enough, which credited
+    `schema: {properties: {}}` — the placeholder several docs platforms emit.
+    That tells an agent nothing about the error envelope, so it does not count.
+    """
     content = response.get("content")
     if not isinstance(content, dict):
         return False
     for media_type in content.values():
-        if isinstance(media_type, dict) and media_type.get("schema"):
+        if not isinstance(media_type, dict):
+            continue
+        schema = media_type.get("schema")
+        if schema is None:
+            continue
+        if not is_vacuous_schema(schema, components):
             return True
     return False
+
+
+def _has_vacuous_content_schema(
+    response: dict[str, Any], components: dict[str, Any]
+) -> bool:
+    """True if every schema on this response is present but says nothing.
+
+    Distinguished from "no schema at all" so the report can tell an author
+    that their placeholder needs filling in, rather than that it is missing.
+    """
+    content = response.get("content")
+    if not isinstance(content, dict):
+        return False
+    found_any = False
+    for media_type in content.values():
+        if not isinstance(media_type, dict):
+            continue
+        schema = media_type.get("schema")
+        if schema is None:
+            continue
+        found_any = True
+        if not is_vacuous_schema(schema, components):
+            return False
+    return found_any
 
 
 def _has_shared_error_schema(components: dict[str, Any]) -> bool:

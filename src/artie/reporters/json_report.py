@@ -8,12 +8,18 @@ from artie.checks.base import CheckResult
 
 
 def to_dict(
-    source: str, format_type: str, results: list[CheckResult]
+    source: str,
+    format_type: str,
+    results: list[CheckResult],
+    format_label: str | None = None,
 ) -> dict[str, Any]:
     """Build a serializable dict from an analysis run."""
     return {
         "source": source,
         "format": format_type,
+        # Human-facing name. Differs from `format` only for spec-in-markdown
+        # pages, which report as "OpenAPI passthrough".
+        "format_label": format_label or format_type,
         "retrieved_at": datetime.now(timezone.utc).isoformat(),
         "tool": "artie-cli",
         "checks": [
@@ -33,5 +39,12 @@ def to_dict(
     }
 
 
-def render(source: str, format_type: str, results: list[CheckResult]) -> str:
-    return json.dumps(to_dict(source, format_type, results), indent=2)
+def render(
+    source: str,
+    format_type: str,
+    results: list[CheckResult],
+    format_label: str | None = None,
+) -> str:
+    return json.dumps(
+        to_dict(source, format_type, results, format_label=format_label), indent=2
+    )

@@ -5,7 +5,36 @@ from pathlib import Path
 from artie.parsers.openapi import parse
 from artie.parsers.types import Endpoint, ParsedDocs
 
-__all__ = ["detect_format", "parse", "Endpoint", "ParsedDocs"]
+__all__ = [
+    "detect_format",
+    "display_format",
+    "parse",
+    "Endpoint",
+    "ParsedDocs",
+]
+
+# Reported instead of the raw format when a page is really a spec wearing a
+# markdown wrapper. Calling those pages "markdown" understates them: every
+# structured check ran against a genuine OpenAPI document.
+OPENAPI_PASSTHROUGH_LABEL = "OpenAPI passthrough"
+
+
+def display_format(format_type: str, parsed: object | None = None) -> str:
+    """Human-facing name for a detected format.
+
+    Differs from `detect_format` only for spec-in-markdown pages. The raw
+    format string stays the routing key everywhere internally — scores, the
+    content-type mismatch warning, and the JSON `format` field all still use
+    it — while this is what we put in front of a reader.
+    """
+    if (
+        format_type == "markdown"
+        and parsed is not None
+        and getattr(parsed, "extracted_from", None) == "markdown"
+        and getattr(parsed, "is_openapi", False)
+    ):
+        return OPENAPI_PASSTHROUGH_LABEL
+    return format_type
 
 
 def detect_format(

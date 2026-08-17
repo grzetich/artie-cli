@@ -33,6 +33,7 @@ def render(
     results: list[CheckResult],
     console: Console | None = None,
     content_type: str | None = None,
+    format_label: str | None = None,
 ) -> None:
     """Render an analysis report to the terminal."""
     console = console or Console()
@@ -43,7 +44,7 @@ def render(
     header.append("artie.fm", style="bold magenta")
     header.append(" — API Documentation AI-Readiness Report\n")
     header.append(f"Source: {source}\n", style="dim")
-    header.append(f"Format: {format_type}", style="dim")
+    header.append(f"Format: {format_label or format_type}", style="dim")
     if content_type and not _matches_format(content_type, format_type):
         # Surface content negotiation: the server returned something different
         # from what the URL suggests.

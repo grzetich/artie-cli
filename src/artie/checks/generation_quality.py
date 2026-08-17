@@ -16,6 +16,33 @@ Five sub-criteria, each worth 2 points:
 The generated code is included in the check's findings so users can see what
 the model actually wrote from their docs. That's the value an empirical check
 delivers that no rule-based check ever could.
+
+## What the gap markers are, and are not
+
+`GAP_MARKER_PATTERN` counts comments where the model says a detail was missing
+from the docs, and each one costs a point. Read them with one caveat in mind:
+**the prompt asks for them.** `PROMPT_TEMPLATE` instructs the model that if a
+detail it needs is absent it must "write an inline code comment that says
+exactly which detail the docs do not provide." The markers are therefore
+elicited, not volunteered.
+
+That does not make them worthless — a model told to report missing details
+still has to find something missing before it reports one, so a marker is
+evidence the detail was genuinely absent from the text it was given. What it
+does mean:
+
+- A gap count is not evidence that an ordinary, unprompted agent would notice
+  or flag the same gap. It is evidence the detail is not in the docs.
+- Gap counts are only comparable between runs that used this same prompt.
+  Editing PROMPT_TEMPLATE's instruction changes the scale, so treat that
+  paragraph as part of the scoring contract, not as free-form prose.
+- The differential baseline invites comments too (it asks the model to flag
+  what it is guessing), so the two arms are directionally comparable, but the
+  marker vocabulary they produce differs and the counts are not interchangeable.
+
+Anyone quoting a generated comment as evidence in a report should say the
+model was asked to flag gaps. Presenting an elicited comment as a spontaneous
+discovery overstates it.
 """
 
 import ast
@@ -520,7 +547,10 @@ def _evaluate(code: str) -> dict[str, Any]:
         recommendations.append(
             "The model flagged details the docs did not provide and worked "
             "around them with placeholders or guesses. The exact gaps appear "
-            "as comments in the generated code; fix those in the source docs."
+            "as comments in the generated code; fix those in the source docs. "
+            "Note the model was explicitly asked to flag missing details, so "
+            "these comments are prompted rather than volunteered — they show "
+            "the detail was absent, not that every agent would notice it."
         )
 
     if not criteria["parses_as_python"]:
@@ -551,5 +581,9 @@ def _evaluate(code: str) -> dict[str, Any]:
         "recommendations": recommendations,
         "line_count": line_count,
         "gap_count": gap_count,
+        # The prompt instructs the model to flag missing details, so gap
+        # markers are elicited. Carried in metadata so downstream consumers
+        # can caveat the number instead of reading it as spontaneous.
+        "gap_markers_elicited": True,
         "raw_score": raw_score,
     }
