@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "artie-cli"
-version = "0.7.1"
+dynamic = ["version"]
 description = "Score your API documentation for AI-readiness. Based on the Tokens Not Jokin' research."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -39,6 +39,11 @@ Research = "https://tokensnotjokin.com"
 
 [project.scripts]
 artie = "artie.cli:app"
+
+# Single source of truth for the version: src/artie/__init__.py. Keeping it
+# in two places drifted once already (0.7.0 here vs 0.7.1 in pyproject).
+[tool.hatch.version]
+path = "src/artie/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/artie"]
