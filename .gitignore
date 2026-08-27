@@ -8,3 +8,13 @@ __pycache__/
 
 # Scratch data pulled for one-off analysis, not part of the package.
 src/healthie-introspection.json
+
+# artie writes its reports as domain-path.md into the working directory, which
+# is this repo when you are developing here. Ignore stray root-level reports
+# without hiding the project's own docs. Scoped to the root so anything under
+# docs/ is unaffected, and git never ignores an already-tracked file, so the
+# negations below only matter on a fresh checkout.
+/*.md
+!/README.md
+!/ARCHITECTURE.md
+!/CONTRIBUTING.md
