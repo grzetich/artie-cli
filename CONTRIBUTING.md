@@ -8,14 +8,16 @@ cd artie-cli
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-artie check examples/bookclub-openapi.yaml --no-generation
+artie check examples/bookclub-openapi.yaml
 ```
 
-If you want to exercise the Generation Quality check, export an Anthropic API key:
+The static checks need no key and no network. To exercise the Generation Quality
+check, export an Anthropic API key and opt in with `--generate-code` — it makes one
+billed API call per run:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-artie check examples/bookclub-openapi.yaml
+artie check examples/bookclub-openapi.yaml --generate-code
 ```
 
 Read `ARCHITECTURE.md` before touching the code. It explains the request flow, the check protocol, and the design decisions that constrain implementation choices.

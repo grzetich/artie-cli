@@ -5,3 +5,6 @@ build/
 __pycache__/
 *.py[cod]
 .venv/
+
+# Scratch data pulled for one-off analysis, not part of the package.
+src/healthie-introspection.json

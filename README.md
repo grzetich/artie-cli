@@ -18,20 +18,21 @@ pipx install artie-cli
 artie check ./openapi.yaml
 ```
 
-For the empirical Generation Quality check, set an Anthropic API key:
+The eight static checks run locally with no key and no network. The empirical Generation Quality check is opt-in, because it makes a billed Anthropic API call:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-artie check ./openapi.yaml
+artie check ./openapi.yaml --generate-code
 ```
 
-Without a key, artie still runs the seven static checks and reports their results. The Generation Quality check shows as N/A with a note about how to enable it.
+Without `--generate-code` — or without a key — Generation Quality shows as N/A with a note about how to enable it, and the rest of the report is unaffected.
 
 ## What it checks
 
-**Seven static checks**, derived from the TNJ research:
+**Eight static checks**, derived from the TNJ research:
 
 - **Format Efficiency**: how token-efficient your documentation format is
+- **Prose Structure**: heading hierarchy, code blocks, section sizes, and staleness signals in prose pages. Format Efficiency scores what a page costs to read; this scores whether an agent can find an answer inside it. Applies to Markdown and HTML
 - **Endpoint Completeness**: descriptions, operationIds, and documented path parameters
 - **Example Coverage**: request and response body examples
 - **Error Documentation**: 4xx and 5xx responses with meaningful descriptions and content schemas
@@ -42,6 +43,8 @@ Without a key, artie still runs the seven static checks and reports their result
 **One empirical check**, applied to any input format:
 
 - **Generation Quality**: an AI model is given your docs and asked to write a Python function that calls the API. The check evaluates what it produced on five criteria: valid syntax, HTTP client import, error handling, request construction, and response handling. The generated code is included in the report so you can see exactly what the model wrote from your docs.
+
+Format Efficiency reports a token count and what a page costs to read at several vendors' input prices. Those counts come from a local GPT-4o tokenizer so the check can run offline with no API key, and every model tokenizes differently — use the figures to compare formats against each other, which is what the check is for, rather than as a billing estimate.
 
 The static checks tell you what specifically to fix. The Generation Quality check tells you whether the fixes are working. Static checks return N/A when the input isn't OpenAPI. Generation Quality runs against anything.
 
@@ -70,18 +73,28 @@ artie check ./openapi.yaml
 # JSON for CI pipelines
 artie check ./openapi.yaml --output json
 
+# Print the report and also write it to a markdown file
+artie check ./openapi.yaml --output md
+
 # Fail the build if any check scores below 7
 artie check ./openapi.yaml --fail-under 7
 
-# Skip the LLM call (faster, no API cost)
-artie check ./openapi.yaml --no-generation
+# Run the empirical Generation Quality check (billed API call)
+artie check ./openapi.yaml --generate-code
 
 # Use a different model for generation
-artie check ./openapi.yaml --model claude-opus-4-7
+artie check ./openapi.yaml --generate-code --model claude-opus-5
 
 # Differential mode: measure what the docs add beyond training (doubles cost)
-artie check ./openapi.yaml --differential
+artie check ./openapi.yaml --generate-code --differential
 ```
+
+`--output md` prints the usual terminal report and additionally writes `domain-path.md` into the current directory, named from what you
+checked: `https://api.example.com/v1/openapi.yaml` becomes
+`api-example-com-v1-openapi.md`, and a local `./spec/openapi.yaml` becomes
+`openapi.md`. A local file is named from the file itself rather than its full path, so
+the same document always produces the same report regardless of how you addressed it.
+Re-running overwrites the report in place.
 
 ## About generation quality and training contamination
 
@@ -97,7 +110,7 @@ For docs the model already knows well, expect a high baseline and a small delta.
 
 ## Cost
 
-The Generation Quality check makes one Anthropic API call per artie run. On Claude Sonnet 4.6 (the default), a typical docs page costs about $0.02 to $0.05 per run. For CI integration that runs on every PR, use `--no-generation` for fast feedback and run the full suite on a schedule.
+Generation Quality is off unless you pass `--generate-code`, so a default run costs nothing. With the flag it makes one Anthropic API call per run; on Claude Sonnet 5 (the default model) a typical docs page costs about $0.02 to $0.05. For CI that runs on every PR, leave the flag off for fast free feedback and add `--generate-code` on a schedule.
 
 ## Examples
 
@@ -109,7 +122,7 @@ artie check examples/sample-openapi.yaml
 
 ## Privacy
 
-The static checks run entirely locally. The Generation Quality check sends your documentation content to Anthropic's API. If your docs are confidential, use `--no-generation` or unset `ANTHROPIC_API_KEY` to skip the empirical check.
+The static checks run entirely locally. The Generation Quality check sends your documentation content to Anthropic's API, and only runs when you pass `--generate-code`. If your docs are confidential, simply omit that flag.
 
 ## Why a CLI
 

@@ -12,7 +12,7 @@ from artie.checks.generation_quality import GenerationQualityCheck
 from artie.fetcher import FetchError, fetch, is_url
 from artie.generator import DEFAULT_MODEL
 from artie.parsers import detect_format, display_format, parse
-from artie.reporters import json_report, terminal
+from artie.reporters import json_report, markdown_report, terminal
 
 app = typer.Typer(
     name="artie",
@@ -57,7 +57,8 @@ def check(
         typer.Option(
             "--output",
             "-o",
-            help="Output format: terminal or json.",
+            help="Output format: terminal (default), json, or md. "
+            "'md' writes a markdown report into the working directory.",
             case_sensitive=False,
         ),
     ] = "terminal",
@@ -75,11 +76,12 @@ def check(
             help="Timeout in seconds for HTTP requests.",
         ),
     ] = 20,
-    no_generation: Annotated[
+    generate_code: Annotated[
         bool,
         typer.Option(
-            "--no-generation",
-            help="Skip the empirical Generation Quality check (faster, no API cost).",
+            "--generate-code",
+            help="Run the empirical Generation Quality check. Off by default: "
+            "it needs ANTHROPIC_API_KEY and makes a billed API call.",
         ),
     ] = False,
     model: Annotated[
@@ -103,6 +105,18 @@ def check(
 ) -> None:
     """Analyze documentation and report AI-readiness scores."""
     console = Console()
+
+    # Validate before fetching or scoring: a typo in --output should not cost
+    # a network round trip, let alone a billed generation call.
+    output_lower = output.lower()
+    if output_lower not in ("terminal", "json", "md"):
+        raise typer.BadParameter(
+            f"Unknown output format: {output}. Use 'terminal', 'json', or 'md'."
+        )
+    if differential and not generate_code:
+        console.print(
+            "[yellow]--differential has no effect without --generate-code.[/yellow]"
+        )
 
     if is_url(target):
         try:
@@ -131,14 +145,15 @@ def check(
     format_label = display_format(format_type, parsed)
 
     # Instantiate all static checks plus the generation check with its flags.
-    # The console only gets passed to the generation check when we're rendering
-    # to terminal; for JSON output we don't want the spinner.
+    # The console only gets passed to the generation check when something is
+    # being rendered to the terminal; JSON goes to stdout, where a spinner
+    # would corrupt the document.
     check_instances: list[BaseCheck] = [cls() for cls in ALL_CHECKS]
-    generation_console = console if output.lower() == "terminal" else None
+    generation_console = console if output_lower in ("terminal", "md") else None
     check_instances.append(
         GenerationQualityCheck(
             model=model,
-            enabled=not no_generation,
+            enabled=generate_code,
             differential=differential,
             source=source,
             console=generation_console,
@@ -150,14 +165,15 @@ def check(
         result = check_instance.run(content, format_type, parsed=parsed)
         results.append(result)
 
-    output_lower = output.lower()
     if output_lower == "json":
         typer.echo(
             json_report.render(
                 source, format_type, results, format_label=format_label
             )
         )
-    elif output_lower == "terminal":
+    elif output_lower == "md":
+        # Print the report as well as writing it. The file is for keeping; you
+        # still want to see the result of the run you just triggered.
         terminal.render(
             source,
             format_type,
@@ -166,9 +182,28 @@ def check(
             content_type=content_type_header,
             format_label=format_label,
         )
+        # Named from the target, written to the working directory rather than
+        # next to the target, so checking a URL still lands somewhere useful.
+        destination = Path.cwd() / markdown_report.report_filename(target)
+        destination.write_text(
+            markdown_report.render(
+                source,
+                format_type,
+                results,
+                format_label=format_label,
+                content_type=content_type_header,
+            ),
+            encoding="utf-8",
+        )
+        console.print(f"[green]Report written to[/green] {destination}")
     else:
-        raise typer.BadParameter(
-            f"Unknown output format: {output}. Use 'terminal' or 'json'."
+        terminal.render(
+            source,
+            format_type,
+            results,
+            console=console,
+            content_type=content_type_header,
+            format_label=format_label,
         )
 
     if fail_under is not None:

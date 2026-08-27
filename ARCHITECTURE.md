@@ -27,6 +27,8 @@ src/artie/
 │   ├── _schema_utils.py   Shared schema/example helpers: ref resolution,
 │   │                      vacuous-schema detection, example parsing and
 │   │                      shallow schema validation.
+│   ├── _html_prose.py     Renders an HTML page as the markdown subset
+│   │                      Prose Structure reads. Stdlib HTMLParser only.
 │   ├── format_efficiency.py
 │   ├── prose_structure.py
 │   ├── endpoint_completeness.py
@@ -39,7 +41,9 @@ src/artie/
 └── reporters/
     ├── __init__.py
     ├── terminal.py    Rich-based human-readable report.
-    └── json_report.py Machine-readable JSON for CI integration.
+    ├── json_report.py Machine-readable JSON for CI integration.
+    └── markdown_report.py  Markdown file for sharing and diffing, plus the
+                            `domain-path.md` naming rule.
 ```
 
 ## Request flow
@@ -71,7 +75,7 @@ Every check subclasses `BaseCheck` and implements `run(content, format_type, par
 
 **Substance over presence.** Several checks originally credited a key for existing: any truthy `schema`, any non-null `example`. That let placeholders score as documentation — `properties: {}` counted as an error schema, and an `example` holding truncated JSON counted as an example. `checks/_schema_utils.py` centralizes the "does this actually say anything" tests so Example Coverage and Error Documentation can score substance. Examples are parsed and validated shallowly against their schema (type agreement, required properties, enum membership); it is deliberately not a full JSON Schema validator, because the goal is catching the errors that appear in published specs without adding a dependency or false-failing on exotic keywords.
 
-**Format Efficiency measures cost, Prose Structure measures quality.** Format Efficiency scores the format and counts tokens, which means every markdown page gets the same score. That is correct but not useful on its own, so `prose_structure.py` does the discriminating for prose inputs: heading hierarchy, code-block presence and language tagging, section sizes, and staleness signals. Page-level token *variance* is deliberately absent — variance is a property of a corpus, and artie scores one target per invocation.
+**Format Efficiency measures cost, Prose Structure measures quality.** Format Efficiency scores the format and counts tokens, which means every markdown page gets the same score. That is correct but not useful on its own, so `prose_structure.py` does the discriminating for prose inputs: heading hierarchy, code-block presence and language tagging, section sizes, and staleness signals. HTML is prose wearing markup, so rather than teach the check a second dialect, `_html_prose.py` normalizes a page into the markdown subset the check already reads — `<h1>`-`<h6>` become ATX headings, `<pre>` becomes a fence carrying the language off the usual highlighter classes — and the same tested scoring runs unchanged. Scoring the extracted prose rather than the raw markup also keeps `class="legacy-nav"` or a `TODO` in a `<script>` from registering as staleness. Page-level token *variance* is deliberately absent — variance is a property of a corpus, and artie scores one target per invocation.
 
 **Naming is scored per location.** Parameter Naming compares names within each location (path, query, header, cookie, body) rather than pooling them. Pooling penalized correct HTTP: `Content-Type` in a header next to `fileName` in a body is two conventions each used where it belongs, not one inconsistent API. Header names are judged against HTTP header convention (hyphen-delimited, case-insensitive) rather than by majority vote.
 
@@ -79,7 +83,7 @@ Every check subclasses `BaseCheck` and implements `run(content, format_type, par
 
 **Embedded OpenAPI extraction.** Modern docs sites (Mintlify, Fern, ReadMe, Stainless, Scalar) embed the OpenAPI spec inside markdown code fences alongside prose and SDK examples. When the input is markdown, `parsers.openapi._parse_markdown` scans for the first fenced block whose contents parse as OpenAPI and uses that as the spec. The structured checks then run against the embedded spec while Format Efficiency still scores against the full markdown.
 
-**Generation Quality is a separate kind of check.** It calls an external API, costs money, and produces results that depend partly on the model rather than entirely on the docs. It accepts a `console` parameter so it can render a spinner during the LLM call, and a `differential` flag that triggers a second baseline call to measure training contamination. It is the most complex check and the least empirically grounded. Treat it accordingly.
+**Generation Quality is a separate kind of check.** It calls an external API, costs money, and produces results that depend partly on the model rather than entirely on the docs. It accepts a `console` parameter so it can render a spinner during the LLM call, and a `differential` flag that triggers a second baseline call to measure training contamination. It is the most complex check and the least empirically grounded. Treat it accordingly. Because it is the only check that spends money, it is **opt-in**: `--generate-code` turns it on and the default run is free, local, and offline. The inverted flag matters more than it looks — under the old `--no-generation` default, forgetting a flag cost money, and the safe path should not be the one you have to remember.
 
 **Not-evaluable means we cannot measure, not that we did not try.** Schema Complexity used to return N/A whenever `components.schemas` was absent, which reported N/A on documents whose schemas were sitting inline on every operation — common on platforms that render one page per endpoint. It now falls back to inline request, response, and parameter schemas, and reports which source it used in `metadata.schema_source`.
 

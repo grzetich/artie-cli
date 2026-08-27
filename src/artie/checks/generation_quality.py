@@ -184,7 +184,8 @@ class GenerationQualityCheck(BaseCheck):
     ) -> CheckResult:
         if not self.enabled:
             return self.not_evaluable(
-                "Generation Quality is disabled. Remove --no-generation to enable."
+                "Generation Quality did not run. Pass --generate-code to enable it "
+                "(needs ANTHROPIC_API_KEY; makes one billed API call)."
             )
 
         if not has_api_key():
@@ -322,7 +323,7 @@ def _generation_error_result(check: "GenerationQualityCheck", exc: Exception) ->
         recommendations=[
             "If this is a temporary overload (HTTP 529 or 429), wait a few "
             "minutes and try again. For other errors, check ANTHROPIC_API_KEY "
-            "and your network. Use --no-generation to skip this check entirely."
+            "and your network. Drop --generate-code to skip this check entirely."
         ],
         metadata={"error": str(exc)},
     )

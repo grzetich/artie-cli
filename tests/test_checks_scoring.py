@@ -306,3 +306,75 @@ curl -X POST https://api.example.com/refunds
 
     def test_not_evaluable_on_stub_pages(self):
         assert self._run("# Hi").is_evaluable is False
+
+
+class TestProseStructureHTML:
+    """HTML is prose wearing markup; the same four signals must apply to it."""
+
+    PAGE = """<!DOCTYPE html>
+<html><head><title>Payments</title>
+<style>.legacy-nav{color:red} .deprecated-badge{display:none}</style>
+<script>var TODO = "analytics";</script></head>
+<body>
+<h1>Payments API</h1>
+<p>An introduction with enough words in it to clear the stub threshold that
+this check applies before it will score anything at all.</p>
+<h2>Create a charge</h2>
+<p>Create a charge against a card using the endpoint below.</p>
+<pre><code class="language-python">requests.post("https://api.example.com/charges")</code></pre>
+<h2>Refund a charge</h2>
+<p>Refund a charge that already settled.</p>
+<pre><code class="lang-bash">curl -X POST https://api.example.com/refunds</code></pre>
+</body></html>
+"""
+
+    def _run(self, content, format_type="html"):
+        return ProseStructureCheck().run(content, format_type)
+
+    def test_html_is_evaluable(self):
+        # The regression: HTML used to fall through to not_evaluable.
+        assert self._run(self.PAGE).is_evaluable is True
+
+    def test_well_formed_html_scores_high(self):
+        assert self._run(self.PAGE).score >= 9
+
+    def test_reports_that_it_scored_extracted_prose(self):
+        assert any("extracted from HTML" in f for f in self._run(self.PAGE).findings)
+        assert self._run(self.PAGE).metadata["converted_from_html"] is True
+
+    def test_heading_levels_survive_conversion(self):
+        metadata = self._run(self.PAGE).metadata
+        assert metadata["headings"] == 3
+        assert metadata["heading_levels"] == [1, 2]
+
+    def test_pre_blocks_become_code_blocks_with_language(self):
+        metadata = self._run(self.PAGE).metadata
+        assert metadata["code_blocks"] == 2
+        assert metadata["code_blocks_with_language"] == 2
+
+    def test_untagged_pre_is_reported(self):
+        page = self.PAGE.replace('<code class="lang-bash">', "<code>")
+        assert any("no language tag" in f for f in self._run(page).findings)
+
+    def test_script_and_style_do_not_trip_staleness(self):
+        # "TODO" sits in a <script> and "legacy"/"deprecated" in CSS class
+        # names. Scoring raw markup would flag all three as stale prose.
+        result = self._run(self.PAGE)
+        assert result.metadata["subscores"]["staleness"] == 1.0
+
+    def test_stale_markers_in_real_prose_are_still_caught(self):
+        page = self.PAGE.replace(
+            "<p>Refund a charge that already settled.</p>",
+            "<p>This endpoint is deprecated and will be removed.</p>",
+        )
+        assert any("Staleness markers" in f for f in self._run(page).findings)
+
+    def test_markup_heavy_but_prose_thin_page_is_a_stub(self):
+        page = "<html><body>" + '<div class="x"></div>' * 200 + "<p>Hi</p></body></html>"
+        result = self._run(page)
+        assert result.is_evaluable is False
+        assert "Extracted prose" in result.findings[0]
+
+    def test_missing_h1_is_reported_in_html(self):
+        page = self.PAGE.replace("<h1>Payments API</h1>", "<h2>Payments API</h2>")
+        assert any("No H1" in f for f in self._run(page).findings)

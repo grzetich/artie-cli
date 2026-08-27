@@ -125,6 +125,18 @@ class FormatEfficiencyCheck(BaseCheck):
                     f"  {model_label}: {_format_per_call(per_call)}/read, "
                     f"${per_million_reads:,.0f}/1M reads"
                 )
+            # Be explicit that these dollars come from a GPT-4o token count,
+            # not each vendor's own tokenizer. Every model here tokenizes
+            # differently, so the absolute figures carry that error while the
+            # comparison between formats -- the thing this check exists to
+            # make -- holds, because every format is counted the same way.
+            findings.append(
+                f"  (counted with the {token_source} tokenizer and priced across "
+                f"vendors; use these to compare formats, not as an invoice)"
+                if token_source != "estimated"
+                else "  (token count is a chars/4 estimate; treat costs as "
+                "order-of-magnitude only)"
+            )
 
         # Surface positive signals from the parser, when present.
         if (
@@ -146,9 +158,9 @@ class FormatEfficiencyCheck(BaseCheck):
             )
         if format_key == "html":
             recommendations.append(
-                "HTML carries structural noise that costs tokens without adding "
+                "HTML carries overhead that consumes tokens without providing "
                 "API information. Offer a structured alternative: OpenAPI YAML, "
-                "a .md suffix on doc URLs, or an llms.txt index."
+                "HTTP content negotiation, an .md suffix on doc URLs, or an llms.txt index."
             )
             severity = Severity.POOR
         if format_key == "markdown":

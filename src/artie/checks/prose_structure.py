@@ -31,6 +31,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from artie.checks._html_prose import html_to_prose
 from artie.checks.base import BaseCheck, CheckResult
 
 # A section longer than this chunks badly: at roughly 4 characters per token
@@ -71,16 +72,25 @@ class ProseStructureCheck(BaseCheck):
     def run(
         self, content: str, format_type: str, parsed: Any = None
     ) -> CheckResult:
-        if format_type.lower() not in ("markdown", "unknown"):
+        fmt = format_type.lower()
+        if fmt not in ("markdown", "unknown", "html"):
             return self.not_evaluable(
                 f"Prose Structure applies to prose documentation; "
                 f"this input is {format_type}."
             )
 
+        # HTML is prose wearing markup. Normalize it into the markdown subset
+        # this check reads so the same four signals apply; see _html_prose.
+        converted_from_html = fmt == "html"
+        original_content = content
+        if converted_from_html:
+            content = html_to_prose(content)
+
         stripped = content.strip()
         if len(stripped) < MIN_PROSE_CHARS:
+            noun = "Extracted prose" if converted_from_html else "Content"
             return self.not_evaluable(
-                f"Content is under {MIN_PROSE_CHARS} characters; too short for "
+                f"{noun} is under {MIN_PROSE_CHARS} characters; too short for "
                 f"structure to be meaningful."
             )
 
@@ -104,6 +114,15 @@ class ProseStructureCheck(BaseCheck):
             *chunk_findings,
             *staleness_findings,
         ]
+        if converted_from_html:
+            # Say so explicitly: these numbers describe the prose recovered
+            # from the markup, not the raw page Format Efficiency scored.
+            findings.insert(
+                0,
+                f"Scored the prose extracted from HTML "
+                f"({len(stripped):,} characters of text from "
+                f"{len(original_content):,} of markup)",
+            )
 
         recommendations = _recommendations(
             heading_score, code_score, chunk_score, staleness_score
@@ -118,6 +137,7 @@ class ProseStructureCheck(BaseCheck):
             findings=findings,
             recommendations=recommendations,
             metadata={
+                "converted_from_html": converted_from_html,
                 "headings": len(headings),
                 "heading_levels": sorted({level for level, _ in headings}),
                 "code_blocks": len(fences),

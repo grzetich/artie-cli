@@ -15,7 +15,10 @@ from urllib.request import Request, urlopen
 
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
-DEFAULT_MODEL = "claude-sonnet-4-6"
+# Sonnet 5 carries the same list price as the 4.6 it replaces ($3/$15 per MTok),
+# so the default moves forward without changing what a run costs. Keep this in
+# step with MODEL_INPUT_PRICING in checks/format_efficiency.py.
+DEFAULT_MODEL = "claude-sonnet-5"
 DEFAULT_MAX_TOKENS = 1500
 DEFAULT_TIMEOUT = 60
 
@@ -106,7 +109,7 @@ def generate(
                 raise GenerationError(
                     f"Anthropic API is temporarily overloaded (HTTP {exc.code}) "
                     f"after {MAX_RETRIES + 1} attempts. Wait a few minutes and "
-                    f"try again, or use --no-generation to skip this check."
+                    f"try again, or drop --generate-code to skip this check."
                 ) from exc
             if exc.code == 401:
                 raise GenerationError(

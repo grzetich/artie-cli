@@ -80,7 +80,7 @@ def render(
 
     cta = Text()
     cta.append(
-        "Based on Tokens Not Jokin' research: leanpub.com/tokensnotjokin",
+        "Based on Tokens Not Jokin' research: https://tokensnotjokin.com",
         style="dim italic",
     )
     console.print(Panel(cta, expand=False))
